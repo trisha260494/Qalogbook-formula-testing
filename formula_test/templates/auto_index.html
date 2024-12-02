@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Formula Calculator</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+
+<body>
+   <!-- Formula Selection for Calculation -->
+<h3>Calculate Missing Variable</h3>
+<div>
+    <label for="formula-select">Select a Formula:</label>
+    <select id="formula-select"></select>
+    <button onclick="fetchFormulaDetails()">Load Formula</button>
+</div>
+<div id="variable-substitution-container" style="display: none;">
+    <h4>Enter Values for Variables</h4>
+    <div id="formula-variable-inputs"></div>
+    <button onclick="calculateMissingVariable()">Calculate</button>
+</div>
+<div id="missing-variable-result"></div>
+
+    <script>
+      // Fetch saved formulas for the dropdown
+function populateFormulaDropdown() {
+    fetch('http://127.0.0.1:5002/view_formulas')
+        .then(response => response.json())
+        .then(data => {
+            const formulaSelect = document.getElementById('formula-select');
+            formulaSelect.innerHTML = ''; // Clear previous options
+            data.forEach(formula => {
+                const option = document.createElement('option');
+                option.value = formula.formula_string;
+                option.textContent = formula.formula_string;
+                formulaSelect.appendChild(option);
+            });
+        })
+        .catch(error => console.error('Error fetching formulas:', error));
+}
+
+// Fetch variables of the selected formula
+function fetchFormulaDetails() {
+    const selectedFormula = document.getElementById('formula-select').value;
+
+    fetch('http://127.0.0.1:5002/get_formula_details', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ formula_string: selectedFormula })
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const variables = data.variables;
+                const inputsContainer = document.getElementById('formula-variable-inputs');
+                inputsContainer.innerHTML = ''; // Clear previous inputs
+
+                // Create input fields for all variables
+                variables.forEach(variable => {
+                    const inputDiv = document.createElement('div');
+                    inputDiv.innerHTML = `
+                        <label for="var-${variable}">${variable}:</label>
+                        <input type="number" id="var-${variable}" placeholder="Enter value for ${variable}">
+                    `;
+                    inputsContainer.appendChild(inputDiv);
+                });
+
+                document.getElementById('variable-substitution-container').style.display = 'block';
+            } else {
+                alert(data.error || 'Error fetching formula details.');
+            }
+        })
+        .catch(error => console.error('Error fetching formula details:', error));
+}
+
+// Calculate the missing variable
+function calculateMissingVariable() {
+    const selectedFormula = document.getElementById('formula-select').value;
+    const inputsContainer = document.getElementById('formula-variable-inputs');
+    const inputFields = inputsContainer.getElementsByTagName('input');
+    const values = {};
+
+    Array.from(inputFields).forEach(input => {
+        if (input.value) {
+            values[input.id.replace('var-', '')] = parseFloat(input.value);
+        }
+    });
+
+    fetch('http://127.0.0.1:5002/calculate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            equation: selectedFormula,
+            variable_to_calculate: null, // Let backend determine missing variable
+            values: values
+        })
+    })
+        .then(response => response.json())
+        .then(data => {
+            const resultDiv = document.getElementById('missing-variable-result');
+            if (data.result) {
+                resultDiv.textContent = `Calculated Value: ${data.result}`;
+            } else {
+                resultDiv.textContent = data.error || 'Error calculating missing variable.';
+            }
+        })
+        .catch(error => console.error('Error calculating missing variable:', error));
+}
+
+// Populate the dropdown on page load
+document.addEventListener('DOMContentLoaded', populateFormulaDropdown);
+     
+
+    </script>
+</body>
+
+</html>

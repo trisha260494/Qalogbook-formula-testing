@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Formula App</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+
+<body>
+
+    <!-- Custom Formula Section -->
+    <h2>Enter Custom Formula</h2>
+    <div>
+        <label for="custom-equation-input">Custom Equation:</label>
+        <input type="text" id="custom-equation-input" placeholder="Enter your equation, e.g., ax + b = c">
+        <button onclick="handleCustomEquationSubmission()">Submit Custom Equation</button>
+    </div>
+
+    <!-- Variable Selection Section (Initially Hidden) -->
+    <div id="variable-selection-container" style="display: none;">
+        <label for="variable-select">Select Variable to Calculate:</label>
+        <select id="variable-select"></select>
+        <button onclick="showVariableInputs()">Proceed</button>
+    </div>
+
+    <!-- Inputs for other variables (Initially Hidden) -->
+    <div id="variable-inputs-container" style="display: none;">
+        <h3>Enter Values for Variables</h3>
+        <div id="inputs-container"></div>
+        <button onclick="calculateCustomFormula()">Calculate</button>
+    </div>
+
+    <!-- Result Section -->
+    <div id="result"></div>
+
+    <!-- Save Formula Section -->
+    <div id="save-prompt" style="display: none;">
+        <p>Do you want to save this formula?</p>
+        <button id="save-button">Yes</button>
+    </div>
+
+    <!-- Success Message Section -->
+    <div id="save-success-message" style="display: none;">
+        <p>Formula saved successfully!</p>
+    </div>
+
+    <button onclick="fetchStoredFormulas()">View Stored Formulas</button>
+    <div id="formula-list"></div>
+
+    <!-- Button to Delete All Formulas -->
+    <button onclick="deleteAllFormulas()">Delete All Formulas</button>
+
+    <!-- Formula List with Delete Options -->
+    <div id="formula-list"></div>
+
+
+    <script>
+        function handleCustomEquationSubmission() {
+            const customEquation = document.getElementById('custom-equation-input').value;
+
+            fetch('http://127.0.0.1:5001/get_variables', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ equation: customEquation })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.variables) {
+                        const variableSelect = document.getElementById('variable-select');
+                        variableSelect.innerHTML = ''; // Clear previous options
+                        data.variables.forEach(variable => {
+                            const option = document.createElement('option');
+                            option.value = variable;
+                            option.textContent = variable;
+                            variableSelect.appendChild(option);
+                        });
+                        document.getElementById('variable-selection-container').style.display = 'block';
+                    } else {
+                        alert(data.error || 'An error occurred');
+                    }
+                });
+        }
+
+        function showVariableInputs() {
+            const selectedVariable = document.getElementById('variable-select').value;
+            const customEquation = document.getElementById('custom-equation-input').value;
+
+            fetch('http://127.0.0.1:5001/get_variables', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ equation: customEquation })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const variables = data.variables;
+                    const inputsContainer = document.getElementById('inputs-container');
+                    inputsContainer.innerHTML = ''; // Clear any previous input fields
+
+                    // Show input fields for all variables except the one selected for calculation
+                    variables.forEach(variable => {
+                        if (variable !== selectedVariable) {
+                            const inputDiv = document.createElement('div');
+                            inputDiv.innerHTML = `
+                        <label for="${variable}">${variable}:</label>
+                        <input type="number" id="${variable}" placeholder="Enter value for ${variable}">
+                    `;
+                            inputsContainer.appendChild(inputDiv);
+                        }
+                    });
+
+                    document.getElementById('variable-inputs-container').style.display = 'block';
+                });
+        }
+
+        function calculateCustomFormula() {
+            const selectedVariable = document.getElementById('variable-select').value;
+            const customEquation = document.getElementById('custom-equation-input').value;
+            const values = {};
+
+            // Collect values from the user inputs
+            const inputsContainer = document.getElementById('inputs-container');
+            const inputFields = inputsContainer.getElementsByTagName('input');
+            Array.from(inputFields).forEach(input => {
+                if (input.value) {
+                    values[input.id] = parseFloat(input.value);
+                }
+            });
+
+            fetch('http://127.0.0.1:5001/calculate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    equation: customEquation,
+                    variable_to_calculate: selectedVariable,
+                    values: values
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // Show result
+                    document.getElementById('result').textContent = data.result || data.error || 'An error occurred';
+
+                    if (data.save_prompt) {
+                        document.getElementById('save-prompt').style.display = 'block';
+                        document.getElementById('save-button').onclick = function () {
+                            // Save formula by sending to the backend
+                            fetch('http://127.0.0.1:5001/save_formula', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    formula_name: customEquation,
+                                    formula_string: customEquation,
+                                    variable_to_calculate: data.variable_to_calculate,
+                                    variables: data.variables.join(', ')  // Join variables as a string
+                                })
+                            })
+                                .then(response => response.json())
+                                .then(saveData => {
+                                    if (saveData.success) {
+                                        document.getElementById('save-success-message').style.display = 'block';
+                                        setTimeout(() => {
+                                            document.getElementById('save-success-message').style.display = 'none';
+                                        }, 3000);
+                                        fetchStoredFormulas();
+                                    } else {
+                                        alert("Error saving formula.");
+                                    }
+                                });
+                        }
+                    }
+                });
+        }
+        // Function to fetch stored formulas and display delete options
+        function fetchStoredFormulas() {
+            fetch('http://127.0.0.1:5001/view_formulas')
+                .then(response => response.json())
+                .then(data => {
+                    const formulaList = document.getElementById('formula-list');
+                    formulaList.innerHTML = ''; // Clear previous entries
+
+                    data.forEach(formula => {
+                        const formulaItem = document.createElement('p');
+                        formulaItem.textContent = `Formula: ${formula.formula_string}, Variables: ${formula.variables}`;
+
+                        // Create a delete button for each formula
+                        const deleteButton = document.createElement('button');
+                        deleteButton.textContent = 'Delete';
+                        deleteButton.onclick = function () {
+                            deleteFormula(formula.id);
+                        };
+
+                        formulaItem.appendChild(deleteButton);
+                        formulaList.appendChild(formulaItem);
+                    });
+                })
+                .catch(error => console.error('Error fetching formulas:', error));
+        }
+
+        // Function to delete a specific formula
+        function deleteFormula(formulaId) {
+            fetch('http://127.0.0.1:5001/delete_formula', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ id: formulaId })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        fetchStoredFormulas(); // Refresh the list after deletion
+                    } else {
+                        alert("Error deleting formula.");
+                    }
+                });
+        }
+
+        // Function to delete all formulas
+        function deleteAllFormulas() {
+            fetch('http://127.0.0.1:5001/delete_all_formulas', {
+                method: 'POST',
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        fetchStoredFormulas(); // Refresh the list after deletion
+                    } else {
+                        alert("Error deleting all formulas.");
+                    }
+                });
+        }
+
+    </script>
+
+</body>
+
+</html>

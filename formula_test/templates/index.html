@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formula Selector</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+
+<body>
+    <h1>Select a Formula</h1>
+    <div>
+        <label for="formulaDropdown">Choose a formula:</label>
+        <select id="formulaDropdown">
+            <option value="">Select a formula</option>
+        </select>
+    </div>
+    <div id="result"></div>
+
+    <!-- New "Go to Database" Dialog Box -->
+    <div id="goToDatabaseDialog" style="display:none;">
+        <p>Do you want to go to the Database?</p>
+        <button id="goToDatabaseBtn">Go to Database</button>
+        <button id="cancelBtn">Cancel</button>
+    </div>
+
+    <script>
+       $(document).ready(function () {
+            // Fetch formulas from the server when the dropdown is clicked
+            $('#formulaDropdown').on('click', function () {
+                $.getJSON('/get_formulas', function (data) {
+                    // Clear existing options
+                    $('#formulaDropdown').find('option').not(':first').remove();
+                    // Populate dropdown with received formulas
+                    $.each(data, function (index, formula) {
+                        $('#formulaDropdown').append('<option value="' + formula + '">' + formula + '</option>');
+                    });
+                });
+            });
+
+            // Handle formula selection
+            $('#formulaDropdown').change(function () {
+                var selectedFormula = $(this).val();
+
+                if (selectedFormula === "custom") {
+                    // Redirect to the custom formula app if "Custom" is selected
+                    window.location.href = "http://127.0.0.1:5001";
+                    return; // Exit the function to avoid further processing
+                }
+
+                if (selectedFormula) {
+                    $('#result').text('You selected: ' + selectedFormula);
+
+                    // Clear previous input form if it exists
+                    $('#result').find('form').remove();
+
+                    // Check if the selected formula is a polynomial
+                    if (selectedFormula === "polynomial") {
+                        // Display a form to enter the degree of the polynomial
+                        var degreeFormHtml = `
+                            <form id="degreeForm">
+                                <label for="degree">Degree:</label>
+                                <input type="number" id="degree" name="degree" min="0" required>
+                                <button type="submit">Submit</button>
+                            </form>
+                        `;
+                        $('#result').append(degreeFormHtml);
+
+                        // Attach submit event handler for the degree form
+                        $('#degreeForm').on('submit', function (e) {
+                            e.preventDefault();  // Prevent default form submission
+
+                            var degree = parseInt($('#degree').val());
+                            fetchCoefficientFields(degree);  // Fetch coefficient fields based on the degree
+                        });
+                    } else {
+                        // Fetch input fields based on the selected formula
+                        $.ajax({
+                            type: "POST",
+                            url: "/get_formula_inputs",
+                            contentType: "application/json",
+                            data: JSON.stringify({ formula: selectedFormula }),
+                            success: function (inputData) {
+                                var inputs = inputData.inputs;  // Access inputs from the response
+                                if (inputs) {
+                                    var inputFieldsHtml = '<form id="inputForm">';  // Start the form
+                                    inputs.forEach(function (input) {
+                                        inputFieldsHtml += '<label for="' + input + '">' + input + ':</label>' +
+                                            '<input type="text" id="' + input + '" name="' + input + '"><br>';
+                                    });
+                                    inputFieldsHtml += '<button type="submit">Submit</button>';  // Add the submit button
+                                    inputFieldsHtml += '</form>';  // End the form
+                                    $('#result').append(inputFieldsHtml);  // Append input fields below the result
+
+                                    // Attach the submit event handler after the form is created
+                                    $('#inputForm').on('submit', function (e) {
+                                        e.preventDefault();  // Prevent default form submission
+
+                                        var values = {};
+                                        $('#inputForm input[type="text"]').each(function () {
+                                            values[this.name] = parseFloat(this.value);
+                                        });
+
+                                        $.ajax({
+                                            type: "POST",
+                                            url: "/calculate",
+                                            contentType: "application/json",
+                                            data: JSON.stringify({ formula: selectedFormula, values: values }),
+                                            success: function (data) {
+                                                $('#result').append('<p>Calculated Result: ' + data.result + '</p>');
+                                            },
+                                            error: function (data) {
+                                                $('#result').text(data.responseJSON.error || "An error occurred");
+                                            }
+                                        });
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Function to fetch coefficient fields based on the degree
+            function fetchCoefficientFields(degree) {
+                var coefficientFieldsHtml = '<form id="coefficientForm">';
+                for (var i = 0; i <= degree; i++) {
+                    coefficientFieldsHtml += '<label for="coef_' + i + '">Coefficient x^' + i + ':</label>' +
+                        '<input type="number" id="coef_' + i + '" name="coef_' + i + '" required><br>';
+                }
+                coefficientFieldsHtml += '<button type="submit">Calculate</button>';  // Add the calculate button
+                coefficientFieldsHtml += '</form>';  // End the form
+
+                // Append the coefficient fields below the result
+                $('#result').append(coefficientFieldsHtml);
+
+                // Attach the submit event handler for the coefficient form
+                $('#coefficientForm').on('submit', function (e) {
+                    e.preventDefault();  // Prevent default form submission
+
+                    var values = {};
+                    $('#coefficientForm input[type="number"]').each(function () {
+                        values[this.name] = parseFloat(this.value);
+                    });
+
+                    // Add the degree to the values object
+                    var degree = parseInt($('#degree').val());  // Get the degree from the degree form
+                    values['degree'] = degree;  // Include the degree in the values object
+
+                    // Calculate the polynomial result using the entered coefficients
+                    $.ajax({
+                        type: "POST",
+                        url: "/calculate",
+                        contentType: "application/json",
+                        data: JSON.stringify({ formula: 'polynomial', values: values }),
+                        success: function (data) {
+                            $('#result').text(data.result);
+                        },
+                        error: function (data) {
+                            $('#result').text(data.responseJSON.error || "An error occurred");
+                        }
+                    });
+                });
+            }
+
+            // Handle "Go to Database" dialog box
+            $('#goToDatabaseBtn').on('click', function () {
+                window.location.href = "http://127.0.0.1:5002";  // Redirect to auto_calculate.py
+            });
+
+            $('#cancelBtn').on('click', function () {
+                $('#goToDatabaseDialog').hide();  // Close the dialog box if the user clicks Cancel
+            });
+
+            // This could be triggered based on your logic (e.g., a formula selection or a button click)
+            // Let's manually show the dialog for demonstration purposes
+            $('#goToDatabaseDialog').show();  // Un-comment to show the dialog box
+        });
+    </script>
+</body>
+
+</html>
